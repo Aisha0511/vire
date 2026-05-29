@@ -1,20 +1,25 @@
 import psutil
+import distro
+
 
 def bsd_info(self):
-    self.report['bsd_info'] = {
-                "cpu_num": psutil.Process().cpu_num(),
-                "cpu_percent": psutil.Process().cpu_percent(),
-                "cpu_times": psutil.Process().cpu_times(),
-                "create_time": psutil.Process().create_time(),
-                "gids": psutil.Process().gids(),
-                "io_counters": psutil.Process().io_counters(),
-                "name": psutil.Process().name(),
-                "memory_info": psutil.Process().memory_info(),
-                "memory_percent": psutil.Process().memory_percent(),
-                "num_ctx_switches": psutil.Process().num_ctx_switches(),
-                "ppid": psutil.Process().ppid(),
-                "status": psutil.Process().status(),
-                "terminal": psutil.Process().terminal(),
-                "uids": psutil.Process().uids(),
-                "username": psutil.Process().username()
-            }
+    psutils_pro = psutil.Process()
+
+    self.report["bsd_info"] = {
+        "distro_info": distro.info(),
+        "cpu_num": psutils_pro.cpu_num(),
+        "cpu_percent": psutils_pro.cpu_percent(),
+        "cpu_times": psutils_pro.cpu_times(),
+        "create_time": psutils_pro.create_time(),
+        "gids": psutils_pro.gids(),
+        "io_counters": psutils_pro.io_counters(),
+        "name": psutils_pro.name(),
+        "memory_info": psutils_pro.memory_info(),
+        "memory_percent": psutils_pro.memory_percent(),
+        "num_ctx_switches": psutils_pro.num_ctx_switches(),
+        "ppid": psutils_pro.ppid(),
+        "status": psutils_pro.status(),
+        "terminal": psutils_pro.terminal(),
+        "uids": psutils_pro.uids(),
+        "username": psutils_pro.username(),
+    }

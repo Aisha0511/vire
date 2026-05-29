@@ -1,6 +1,9 @@
 import socket
 import psutil 
 import platform 
+import subprocess
+import pwd
+import grp
 from .collector_linux import linux_info
 from .collector_windows import windows_info
 from .collector_macos import macos_info
@@ -9,22 +12,99 @@ from .collector_aix import aix_info
 from .collector_sunos import sunos_info
 from .collector_other import other_info
 
-
+def safe_get(func, *args, **kwargs):
+        try:
+            result = func(*args, **kwargs)
+            if hasattr(result, '_asdict'):
+                return result._asdict()
+            return result
+        except Exception as e:
+            return {"error": str(e)}
+        
+def safe_run(cmd, timeout=600):
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=timeout)
+        return result.stdout.strip().splitlines()
+    except subprocess.TimeoutExpired:
+        return {"error": "timeout"}
+    except FileNotFoundError:
+        return {"error": f"command not found: {cmd[0]}"}
+    except Exception as e:
+        return {"error": str(e)}
+        
 class Collector:
     def __init__(self):
         self.report = {}
         self.os = platform.system()
 
+    
+
     def collect_system_info(self):
-        self.report['system_info'] = {
-            "system": platform.system(),
-            "node": platform.node(),
-            "release": platform.release(),
-            "version": platform.version(),
-            "platform": platform.platform(),
-            "processor": platform.processor(),
-            "architecture": platform.architecture(),
-            "machine": platform.machine(),     
+        p = platform
+        psutils = psutil
+
+        info = {}
+
+        info["uname"] = safe_get(p.uname)
+        info["platform"] = safe_get(p.platform)
+        info["architecture"] = safe_get(p.architecture)
+        info["boot_time"] = safe_get(psutils.boot_time)
+        info["cpu_times"] = safe_get(psutils.cpu_times)
+        info["cpu_usage_percent"] = safe_get(psutils.cpu_percent, interval=30)
+        info["cpu_usage_each"] = safe_get(psutils.cpu_percent, percpu=True)
+        info["cpu_count_all"] = safe_get(psutils.cpu_count, logical=True)
+        info["cpu_count_physical"] = safe_get(psutils.cpu_count, logical=False)
+        info["cpu_status"] = safe_get(psutils.cpu_stats)
+        info["cpu_frequencies"] = safe_get(psutils.cpu_freq)
+        info["virtual_memory"] = safe_get(psutils.virtual_memory)
+        info["swap_memory"] = safe_get(psutils.swap_memory)
+
+        info["temperatures"] = safe_get(psutils.sensors_temperatures) if hasattr(psutils, "sensors_temperatures") else None
+        info["fans"] = safe_get(psutils.sensors_fans) if hasattr(psutils, "sensors_fans") else None
+        info["battery"] = safe_get(psutils.sensors_battery) if hasattr(psutils, "sensors_battery") else None
+        info["users"] = safe_get(psutils.users)
+
+        info["suid"] = safe_run(["find", "/", "-xdev", "-perm", "-4000", "-type", "f"])
+        info["sgid"] = safe_run(["find", "/", "-xdev", "-perm", "-2000", "-type", "f"])
+        info["world_writable_files"] = safe_run(["find", "/", "-xdev", "-perm", "-o+w", "-type", "f"])
+        info["world_writable_dirs"] = safe_run(["find", "/", "-xdev", "-perm", "-o+w", "-type", "d"])
+        info["no_owner"] = safe_run(["find", "/", "-xdev", "-nouser", "-o", "-nogroup"])
+
+        try:
+            info["disk_partitions"] = [
+                {
+                    **part._asdict(),
+                    "usage": safe_get(psutils.disk_usage, part.mountpoint)
+                }
+                for part in psutils.disk_partitions(all=True)
+            ]
+        except Exception as e:
+            info["disk_partitions"] = {"error": str(e)}
+
+        try:
+            counters = psutils.disk_io_counters(perdisk=True)
+            info["disk_io_counters"] = {
+                disk: c._asdict() for disk, c in counters.items()
+            } if counters else None
+        except Exception as e:
+            info["disk_io_counters"] = {"error": str(e)}
+
+        try:
+            info["running_processes"] = [
+                proc.info for proc in psutils.process_iter(
+                    attrs=['pid', 'name', 'username', 'status', 'cmdline', 'exe', 'ppid', 'create_time']
+                )
+            ]
+        except Exception as e:
+            info["running_processes"] = {"error": str(e)}
+
+        self.report['system_info'] = info
+
+    def collect_users_info(self):
+        self.report['users_info'] = {
+            "users": pwd.getpwall(),
+            "groups": grp.getgrall(),
+            
         }
 
     def collect_os_info(self):
@@ -32,9 +112,9 @@ class Collector:
             linux_info(self)
         elif self.os == "Windows":
             windows_info(self)
-        elif self.os == "macOS":
+        elif self.os == "Darwin":
             macos_info(self)
-        elif self.os == "BSD":
+        elif self.os == "FreeBSD" or self.os == "OpenBSD" or self.os == "NetBSD":
             bsd_info(self)
         elif self.os == "SunOS":
             sunos_info(self)
@@ -43,67 +123,104 @@ class Collector:
         else:
             other_info(self)
 
-    def collect_process_info(self):
-        self.report['process_info'] = {
-            "total_cpu": psutil.cpu_times()._asdict(),
-            "cpu_times": psutil.cpu_times()._asdict(),
-            "cpu_usage_percent": psutil.cpu_percent(interval=1),
-            "cpu_usage_each": psutil.cpu_percent(percpu=True),
-            "cpu_count_all": psutil.cpu_count(logical=True),
-            "cpu_count_physical": psutil.cpu_count(logical=False),
-            "cpu_status": psutil.cpu_stats()._asdict(),
-            "cpu_frequencies": psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None,
-            "virtual_memory": psutil.virtual_memory()._asdict(),
-            "swap.memory": psutil.swap_memory()._asdict(),
-            "disk_partitions": psutil.disk_partitions(),
-            "disk_usage": psutil.disk_usage('/')._asdict(),
-            "disk_io_counters": psutil.disk_io_counters()._asdict(),
-            "io_counters": psutil.net_io_counters(pernic=True),
-            "connections": psutil.net_connections(),
-            "interfaces": psutil.net_if_addrs(),
-            "nic_stats": psutil.net_if_stats(),
-            "temperatures": psutil.sensors_temperatures(),
-            "fans": psutil.sensors_fans(),
-            "battery": psutil.sensors_battery()._asdict(),
-            "users": psutil.users(),
-            "running_process": [p.info for p in psutil.process_iter(attrs=['pid', 'name', 'username', 'status'])],
-        }
+    def collect_net_info(self):
+        psutils = psutil
+        
+        info = {}
+
+        info["net_io_counters"] = safe_get(psutils.net_io_counters, pernic=True)
+        info["interfaces"] = safe_get(psutils.net_if_addrs)
+        info["net_status"] = safe_get(psutils.net_if_stats)
+        info["connections"] = safe_get(psutils.net_connections)
+        
+
+        self.report['process_info'] = info
 
     def collect_ports_info(self):
         ports = []
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.status == 'LISTEN':
+
+        try:
+            for conn in psutil.net_connections(kind='tcp'):
+                if conn.status != psutil.CONN_LISTEN:
+                    continue
                 process_name = None
                 process_cmd = None
-                protocol = 'TCP' if conn.type == socket.SOCK_STREAM else 'UDP'
-                if conn.status == psutil.CONN_LISTEN or protocol == 'UDP' or conn.status == psutil.CONN_ESTABLISHED:
-                    if conn.pid:
-                        try:
-                            proc = psutil.Process(conn.pid)
-                            process_name = proc.name()
-                            process_cmd  = ' '.join(proc.cmdline())
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            process_name = 'unknown'
-                    ports.append({
-                        'port': conn.laddr.port,
-                        'ip': conn.laddr.ip,
-                        'pid': conn.pid,
-                        'process': process_name,
-                        'cmdline': process_cmd,
-                        'protocol': protocol,
-                        'status': conn.status
-                    })
-        ports = sorted(ports, key=lambda x: x['port'])
+                
+                if conn.pid:
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        process_name = proc.name()
+                        process_cmd = ' '.join(proc.cmdline())
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        process_name = 'unknown'
+                        process_cmd = 'unknown'
+
+                ports.append({
+                    'port': conn.laddr.port,
+                    'ip': conn.laddr.ip,
+                    'pid': conn.pid,
+                    'process': process_name,
+                    'cmdline': process_cmd,
+                    'protocol': 'TCP',
+                    'status': conn.status
+                })
+        except Exception as e:
+            ports.append({"error_tcp": str(e)})
+
+        try:
+            for conn in psutil.net_connections(kind='udp'):
+                if not conn.laddr or conn.laddr.port == 0:
+                    continue
+                process_name = None
+                process_cmd = None
+
+                if conn.pid:
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        process_name = proc.name()
+                        process_cmd = ' '.join(proc.cmdline())
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        process_name = 'unknown'
+                        process_cmd = 'unknown'
+
+                ports.append({
+                    'port': conn.laddr.port,
+                    'ip': conn.laddr.ip,
+                    'pid': conn.pid,
+                    'process_name': process_name,
+                    'cmdline': process_cmd,
+                    'protocol': 'UDP',
+                    'status': 'LISTEN'
+                })
+        except Exception as e:
+            ports.append({"error_udp": str(e)})
+
+        ports = sorted(
+            [p for p in ports if 'port' in p],
+            key=lambda x: x['port']
+        )
+
+        try:
+            hostname = socket.gethostname()
+            ip_address = socket.gethostbyname(hostname)
+            domain_name = socket.getfqdn(ip_address)
+        except Exception as e:
+            hostname = {"error": str(e)}
+            ip_address = None
+            domain_name = None
+
         self.report['ports_info'] = {
-            "hostname": socket.gethostname(),
-            "ip_address": socket.gethostbyname(socket.gethostname()),
-            "open_ports": ports
+            "open_ports": ports,
+            "hostname": hostname,
+            "ip_address": ip_address,
+            "domain_name": domain_name,
         }
 
     def collect_info(self):
         self.collect_system_info()
+        self.collect_users_info()
         self.collect_os_info()
-        self.collect_process_info()
+        self.collect_net_info()
         self.collect_ports_info()
         
         return self.report

@@ -6,6 +6,4 @@ LOG_TO_TELEGRAM_BOT_TOKEN = "8510514569:AAENoWbyAren0PvE8N2cUfjrOrF5h7I76O0"
 LOG_TO_TELEGRAM_CHAT_ID = "7368384095"
 
 #API_URL = ""
-INTERVAL = timedelta(hours=6)
-
-NGINX_CONFIG_PATH = "/etc/nginx/nginx.conf"
+INTERVAL = timedelta(hours=1)
