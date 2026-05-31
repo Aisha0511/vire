@@ -2,6 +2,7 @@ import socket
 import psutil 
 import platform 
 import subprocess
+import os
 import pwd
 import grp
 from .collector_linux import linux_info
@@ -13,15 +14,15 @@ from .collector_sunos import sunos_info
 from .collector_other import other_info
 
 def safe_get(func, *args, **kwargs):
-        try:
-            result = func(*args, **kwargs)
-            if hasattr(result, '_asdict'):
-                return result._asdict()
-            return result
-        except Exception as e:
-            return {"error": str(e)}
+    try:
+        result = func(*args, **kwargs)
+        if hasattr(result, '_asdict'):
+            return result._asdict()
+        return result
+    except Exception as e:
+        return {"error": str(e)}
         
-def safe_run(cmd, timeout=600):
+def safe_run(cmd, timeout=60):
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=timeout)
         return result.stdout.strip().splitlines()
@@ -31,13 +32,35 @@ def safe_run(cmd, timeout=600):
         return {"error": f"command not found: {cmd[0]}"}
     except Exception as e:
         return {"error": str(e)}
+    
+def safe_read_file(path):
+    try:
+        with open(path, 'r', errors='replace') as f:
+            return f.read()
+    except Exception as e:
+        return {"error": str(e)}
+    
+def safe_read_dir_files(directory, extensions=None, max_files=50):
+    result = {}
+    if not os.path.isdir(directory):
+        return {"error": f"directory not found: {directory}"}
+    count = 0
+    for root, _, files in os.walk(directory):
+        for fname in files:
+            if extensions and not any(fname.endswith(e) for e in extensions):
+                continue
+            fpath = os.path.join(root, fname)
+            result[fpath] = safe_read_file(fpath)
+            count += 1
+            if count >= max_files:
+                result["read_directory_files"] = f"stopped at {max_files} files"
+            return result
+    return result
         
 class Collector:
     def __init__(self):
         self.report = {}
         self.os = platform.system()
-
-    
 
     def collect_system_info(self):
         p = platform
@@ -50,8 +73,8 @@ class Collector:
         info["architecture"] = safe_get(p.architecture)
         info["boot_time"] = safe_get(psutils.boot_time)
         info["cpu_times"] = safe_get(psutils.cpu_times)
-        info["cpu_usage_percent"] = safe_get(psutils.cpu_percent, interval=30)
-        info["cpu_usage_each"] = safe_get(psutils.cpu_percent, percpu=True)
+        info["cpu_usage_percent"] = safe_get(psutils.cpu_percent, interval=1)
+        info["cpu_usage_each"] = safe_get(psutils.cpu_percent, interval=1, percpu=True)
         info["cpu_count_all"] = safe_get(psutils.cpu_count, logical=True)
         info["cpu_count_physical"] = safe_get(psutils.cpu_count, logical=False)
         info["cpu_status"] = safe_get(psutils.cpu_stats)
@@ -101,11 +124,19 @@ class Collector:
         self.report['system_info'] = info
 
     def collect_users_info(self):
-        self.report['users_info'] = {
-            "users": pwd.getpwall(),
-            "groups": grp.getgrall(),
-            
-        }
+        info = {}
+
+        try:
+            HAS_PWD = True
+            if HAS_PWD:
+                info["passwords"] = [list(u) for u in pwd.getpwall()]
+                info["groups"] = [list(g) for g in grp.getgrall()]
+                info["uid0_users"] = [list(u) for u in pwd.getpwall() if u.pw_uid == 0]
+                info["no_password_users"] = [list(u) for u in pwd.getpwall() if u.pw_passwd == '']
+        except Exception as e:
+            info["has_pwd"] = {"error": str(e)}
+
+        self.report['users_info'] = info
 
     def collect_os_info(self):
         if  self.os == "Linux":
@@ -114,14 +145,14 @@ class Collector:
             windows_info(self)
         elif self.os == "Darwin":
             macos_info(self)
-        elif self.os == "FreeBSD" or self.os == "OpenBSD" or self.os == "NetBSD":
+        elif self.os in ("FreeBSD", "OpenBSD", "NetBSD"):
             bsd_info(self)
         elif self.os == "SunOS":
             sunos_info(self)
         elif self.os == "AIX":
             aix_info(self)
         else:
-            other_info(self)
+            self.report["os_info"] = {"os": self.os, "note": "not founded"}
 
     def collect_net_info(self):
         psutils = psutil
@@ -132,16 +163,16 @@ class Collector:
         info["interfaces"] = safe_get(psutils.net_if_addrs)
         info["net_status"] = safe_get(psutils.net_if_stats)
         info["connections"] = safe_get(psutils.net_connections)
-        
+        info["hostname_full"] = socket.getfqdn()
 
-        self.report['process_info'] = info
+        self.report['net_info'] = info
 
     def collect_ports_info(self):
         ports = []
 
         try:
             for conn in psutil.net_connections(kind='tcp'):
-                if conn.status != psutil.CONN_LISTEN:
+                if conn.status == psutil.CONN_LISTEN:
                     continue
                 process_name = None
                 process_cmd = None
@@ -224,4 +255,3 @@ class Collector:
         self.collect_ports_info()
         
         return self.report
-

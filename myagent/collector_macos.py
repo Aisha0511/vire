@@ -4,30 +4,36 @@ import subprocess
 
 
 def macos_info(self):
-    from myagent.collector import safe_get
-    psutils_pro = psutil.Process()
+    from myagent.collector import safe_get, safe_run, safe_read_file, safe_read_dir_files
 
     info = {}
 
-    info["sysctl"] = safe_get(subprocess.run(['sysctl', '-n', 'hw.model'], capture_output=True, text=True).stdout.lower)
-    info["hypervisor"] = safe_get(subprocess.run(["sysctl", '-n', "machdep.cpu.features"], capture_output=True, text=True).stdout.lower)
+    base_find = ["find", "/", "-xdev", "-maxdepth", "8"]
+
+    info["suid_files"] = safe_run(base_find + ["-perm", "-4000", "-type", "f"], timeout=30)
+    info["sgid_files"] = safe_run(base_find + ["-perm", "-2000", "-type", "f"], timeout=30)
+    info["world_writable_files"] = safe_run(base_find + ["-perm", "-o+w", "-type", "f", "-not", "-path", "*/proc/*"], timeout=30)
+    info["world_writable_dirs"] = safe_run(base_find + ["-perm", "-o+w", "-type", "d", "-not", "-path", "*/proc/*"], timeout=30)
+    info["no_owner_files"] = safe_run(base_find + ["-nouser"], timeout=30)
+    info["last_logins"] = safe_run(["last", "-n", "50"])
+    info["lastlog"] = safe_run(["lastlog"])
+    info["failed_logins"] = safe_run(["lastb", "-n", "20"])
+    info["who"] = safe_run(["who"])
+    info["w"] = safe_run(["w"])
+    info["sudoers_file"] = safe_read_file("/etc/sudoers")
+    info["sudoers_dir"] = safe_read_dir_files("/etc/sudoers.d")
+    info["hw_model"] = safe_run(["sysctl", "-n", "hw.model"])
+    info["cpu_features"] = safe_run(["sysctl", "-n", "machdep.cpu.features"])
+    info["sw_vers"] = safe_run(["sw_vers"])
+    info["brew_packages"] = safe_run(["brew", "list", "--versions"], timeout=30)
+    info["brew_outdated"] = safe_run(["brew", "outdated"], timeout=30)
+    info["sshd_config"]  = safe_read_file("/etc/ssh/sshd_config")
+    info["authorized_keys_root"] = safe_read_file("/var/root/.ssh/authorized_keys")
+    info["pf_rules"] = safe_run(["pfctl", "-sr"])
+    info["pf_status"] = safe_run(["pfctl", "-si"])
+    info["dscl_users"]   = safe_run(["dscl", ".", "-list", "/Users"])
+    info["last_logins"]  = safe_run(["last", "-20"])
+    info["routes"] = safe_run(["ip", "route"]) or safe_run(["netstat", "-rn"])
 
     self.report["macos_info"] = info
 
-    '''self.report["macos_info"] = {
-        "cpu_percent": psutils_pro.cpu_percent(),
-        "cpu_times": psutils_pro.cpu_times(),
-        "memory_info": psutils_pro.memory_info(),
-        "memory_percent": psutils_pro.memory_percent(),
-        "num_ctx_switches": psutils_pro.num_ctx_switches(),
-        "num_threads": psutils_pro.num_threads(),
-        "create_time": psutils_pro.create_time(),
-        "gids": psutils_pro.gids(),
-        "name": psutils_pro.name(),
-        "ppid": psutils_pro.ppid(),
-        "status": psutils_pro.status(),
-        "terminal": psutils_pro.terminal(),
-        "uids": psutils_pro.uids(),
-        "username": psutils_pro.username(),
-        "platform": platform.mac_ver(),
-    }'''

@@ -4,25 +4,20 @@ import subprocess
 
 
 def windows_info(self):
-    from myagent.collector import safe_get
-    psutils_pro = psutil.Process()
+    from myagent.collector import safe_get, safe_run, safe_read_file, safe_read_dir_files
 
     info = {}
 
-    info["wmic"] = safe_get(subprocess.run(['wmic', 'computersystem', 'get', 'model'], capture_output=True, text=True).stdout.lower)
+    info["computer_model"] = safe_run(["wmic", "computersystem", "get", "model", "/value"])
+    info["os_version"] = safe_run(["wmic", "os", "get", "caption,version,buildnumber", "/value"])
+    info["installed_software"] = safe_run(["wmic", "product", "get", "name,version", "/value"], timeout=60)
+    info["services"] = safe_run(["sc", "query", "type=", "all", "state=", "all"])
+    info["local_users"] = safe_run(["net", "user"])
+    info["local_groups"] = safe_run(["net", "localgroup"])
+    info["admins"] = safe_run(["net", "localgroup", "Administrators"])
+    info["firewall_rules"] = safe_run(["netsh", "advfirewall", "firewall", "show", "rule", "name=all"])
+    info["firewall_state"] = safe_run(["netsh", "advfirewall", "show", "allprofiles"])
+    info["netstat"] = safe_run(["netstat", "-ano"])
+    info["routes"] = safe_run(["route", "print"])
 
     self.report["windows_info"] = info
-
-    '''self.report["windows_info"] = {
-        "cpu_percent": psutils_pro.cpu_percent(),
-        "cpu_times": psutils_pro.cpu_times(),
-        "io_counters": psutils_pro.io_counters(),
-        "memory_info": psutils_pro.memory_info(),
-        "memory_maps": psutils_pro.memory_maps(),
-        "num_ctx_switches": psutils_pro.num_ctx_switches(),
-        "num_threads": psutils_pro.num_threads(),
-        "username": psutils_pro.username(),
-        "exe": psutils_pro.exe(),
-        "name": psutils_pro.name(),
-        "platform": platform.win32_ver(),
-    }'''

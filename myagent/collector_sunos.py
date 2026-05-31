@@ -15,5 +15,5 @@ def sunos_info(self):
                 "terminal":psutils_pro.terminal(),
                 "gids": psutils_pro.gids(),
                 "uids": psutils_pro.uids(),
-                "username": psutils_pro.username()
+                "username": psutils_pro.username(),
             }
