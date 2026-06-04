@@ -1,7 +1,3 @@
-import psutil
-import platform
-import subprocess
-
 
 def windows_info(self):
     from myagent.collector import safe_get, safe_run, safe_read_file, safe_read_dir_files
@@ -18,6 +14,8 @@ def windows_info(self):
     info["firewall_rules"] = safe_run(["netsh", "advfirewall", "firewall", "show", "rule", "name=all"])
     info["firewall_state"] = safe_run(["netsh", "advfirewall", "show", "allprofiles"])
     info["netstat"] = safe_run(["netstat", "-ano"])
+    info["shares"] = safe_run(["net", "share"])
+    info["password_policy"] = safe_run(["net", "accounts"])
     info["routes"] = safe_run(["route", "print"])
 
     self.report["windows_info"] = info

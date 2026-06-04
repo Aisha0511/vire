@@ -1,8 +1,5 @@
 import os
 import distro
-import subprocess
-
-
 
 def linux_info(self):
     from myagent.collector import safe_get, safe_run, safe_read_dir_files, safe_read_file
@@ -33,6 +30,10 @@ def linux_info(self):
     info["authorized_keys_root"] = safe_read_file("/root/.ssh/authorized_keys")
     info["lsof_network"] = safe_run(["lsof", "-i", "-n", "-P"], timeout=15)
     info["routes"] = safe_run(["ip", "route"]) or safe_run(["netstat", "-rn"])
+    info["iptables_v4"] = safe_run(["iptables", "-L", "-n", "-v"])
+    info["iptables_v6"] = safe_run(["ip6tables", "-L", "-n", "-v"])
+    info["ufw_status"] = safe_run(["ufw", "status", "verbose"])
+    info["nftables"] = safe_run(["nft", "list", "ruleset"])
     
     if os.path.exists("/usr/bin/dpkg") or os.path.exists("/bin/dpkg"):
         info["installed_packages"] = safe_run(["dpkg", "-l"], timeout=30)

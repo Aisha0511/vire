@@ -1,7 +1,6 @@
 import psutil
 import distro
 
-
 def aix_info(self):
     psutils_pro = psutil.Process()
 

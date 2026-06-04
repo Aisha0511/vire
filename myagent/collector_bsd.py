@@ -1,6 +1,3 @@
-import psutil
-import distro
-
 
 def bsd_info(self):
     from myagent.collector import safe_get, safe_run, safe_read_file, safe_read_dir_files

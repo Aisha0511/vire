@@ -87,12 +87,6 @@ class Collector:
         info["battery"] = safe_get(psutils.sensors_battery) if hasattr(psutils, "sensors_battery") else None
         info["users"] = safe_get(psutils.users)
 
-        info["suid"] = safe_run(["find", "/", "-xdev", "-perm", "-4000", "-type", "f"])
-        info["sgid"] = safe_run(["find", "/", "-xdev", "-perm", "-2000", "-type", "f"])
-        info["world_writable_files"] = safe_run(["find", "/", "-xdev", "-perm", "-o+w", "-type", "f"])
-        info["world_writable_dirs"] = safe_run(["find", "/", "-xdev", "-perm", "-o+w", "-type", "d"])
-        info["no_owner"] = safe_run(["find", "/", "-xdev", "-nouser", "-o", "-nogroup"])
-
         try:
             info["disk_partitions"] = [
                 {
